@@ -1,0 +1,241 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated viewer profile owned by the signed-in user.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owner."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Viewer display name shown in watch-room chat."
+        },
+        "photoUrl": {
+          "type": "string",
+          "description": "Optional profile avatar URL."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "displayName", "createdAt", "updatedAt"]
+    },
+    "WatchlistItem": {
+      "title": "WatchlistItem",
+      "description": "Stream bookmark and episode progress saved by a viewer.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "subjectId": {
+          "type": "string",
+          "description": "MovieBox subject identifier."
+        },
+        "title": {
+          "type": "string",
+          "description": "Stream or title name."
+        },
+        "mediaType": {
+          "type": "string",
+          "enum": ["Movie", "Series"],
+          "description": "Content type."
+        },
+        "coverUrl": {
+          "type": "string",
+          "description": "Optional poster image URL."
+        },
+        "imdbRating": {
+          "type": "string",
+          "description": "Optional IMDb rating string."
+        },
+        "lastSeason": {
+          "type": "integer",
+          "description": "Last watched season number (0 for movies)."
+        },
+        "lastEpisode": {
+          "type": "integer",
+          "description": "Last watched episode number (0 for movies)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when added (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "subjectId", "title", "mediaType", "lastSeason", "lastEpisode", "createdAt", "updatedAt"]
+    },
+    "WatchRoom": {
+      "title": "WatchRoom",
+      "description": "Live watch room metadata for a streaming title or episode.",
+      "type": "object",
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "description": "Deterministic room identifier (e.g., subject_<id>_s<se>_e<ep>)."
+        },
+        "subjectId": {
+          "type": "string",
+          "description": "MovieBox subject identifier."
+        },
+        "title": {
+          "type": "string",
+          "description": "Title being streamed in the room."
+        },
+        "mediaType": {
+          "type": "string",
+          "enum": ["Movie", "Series"],
+          "description": "Content type."
+        },
+        "season": {
+          "type": "integer",
+          "description": "Season number."
+        },
+        "episode": {
+          "type": "integer",
+          "description": "Episode number."
+        },
+        "coverUrl": {
+          "type": "string",
+          "description": "Optional poster URL."
+        },
+        "detailPath": {
+          "type": "string",
+          "description": "Optional MovieBox slug path."
+        },
+        "isLive": {
+          "type": "boolean",
+          "description": "Whether the room is active and discoverable."
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "UID of the viewer who opened the watch room."
+        },
+        "hostName": {
+          "type": "string",
+          "description": "Display name of the viewer who opened the room."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["roomId", "subjectId", "title", "mediaType", "season", "episode", "isLive", "createdBy", "hostName", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Real-time chat message or reaction in a watch room.",
+      "type": "object",
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "description": "Parent watch room identifier."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Author Firebase Auth UID."
+        },
+        "senderName": {
+          "type": "string",
+          "description": "Display name of the sender."
+        },
+        "senderAvatarUrl": {
+          "type": "string",
+          "description": "Optional avatar URL."
+        },
+        "text": {
+          "type": "string",
+          "description": "Message body or reaction symbol."
+        },
+        "streamQuality": {
+          "type": "string",
+          "description": "Optional quality badge the sender is watching (e.g., 1080p)."
+        },
+        "messageType": {
+          "type": "string",
+          "enum": ["chat", "reaction"],
+          "description": "Message kind."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when posted."
+        }
+      },
+      "required": ["roomId", "userId", "senderName", "text", "messageType", "createdAt"]
+    },
+    "ViewerPresence": {
+      "title": "ViewerPresence",
+      "description": "Active viewer heartbeat inside a watch room.",
+      "type": "object",
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "description": "Parent watch room identifier."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Viewer Firebase Auth UID."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Viewer display name."
+        },
+        "activeQuality": {
+          "type": "string",
+          "description": "Optional active stream quality."
+        },
+        "lastSeenAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest heartbeat."
+        }
+      },
+      "required": ["roomId", "userId", "displayName", "lastSeenAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Owner-scoped viewer profile."
+    },
+    "/users/{userId}/watchlist/{itemId}": {
+      "schema": { "$ref": "#/entities/WatchlistItem" },
+      "description": "Owner-scoped saved streams and episode progress."
+    },
+    "/rooms/{roomId}": {
+      "schema": { "$ref": "#/entities/WatchRoom" },
+      "description": "Active watch rooms for live streaming and chat."
+    },
+    "/rooms/{roomId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Real-time chat messages inside a watch room."
+    },
+    "/rooms/{roomId}/presence/{presenceUserId}": {
+      "schema": { "$ref": "#/entities/ViewerPresence" },
+      "description": "Active viewer presence records inside a watch room."
+    }
+  }
+}

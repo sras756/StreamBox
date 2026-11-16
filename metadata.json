@@ -1,0 +1,6 @@
+{
+  "name": "StreamBox",
+  "description": "HD live video streaming app with real-time watch-room chat, quality switching, and subtitle support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

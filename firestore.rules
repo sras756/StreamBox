@@ -1,0 +1,226 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Shared Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- Validation Helpers ---
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
+             (!('photoUrl' in data) || data.photoUrl == null || (data.photoUrl is string && data.photoUrl.size() <= 500));
+    }
+
+    function isValidWatchlistItem(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.subjectId is string && data.subjectId.size() >= 1 && data.subjectId.size() <= 64 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+             data.mediaType in ['Movie', 'Series'] &&
+             (!('coverUrl' in data) || data.coverUrl == null || (data.coverUrl is string && data.coverUrl.size() <= 800)) &&
+             (!('imdbRating' in data) || data.imdbRating == null || (data.imdbRating is string && data.imdbRating.size() <= 16)) &&
+             data.lastSeason is int && data.lastSeason >= 0 && data.lastSeason <= 100 &&
+             data.lastEpisode is int && data.lastEpisode >= 0 && data.lastEpisode <= 2000;
+    }
+
+    function isValidWatchRoom(data) {
+      return isValidId(data.roomId) &&
+             data.subjectId is string && data.subjectId.size() >= 1 && data.subjectId.size() <= 64 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+             data.mediaType in ['Movie', 'Series'] &&
+             data.season is int && data.season >= 0 && data.season <= 100 &&
+             data.episode is int && data.episode >= 0 && data.episode <= 2000 &&
+             (!('coverUrl' in data) || data.coverUrl == null || (data.coverUrl is string && data.coverUrl.size() <= 800)) &&
+             (!('detailPath' in data) || data.detailPath == null || (data.detailPath is string && data.detailPath.size() <= 200)) &&
+             data.isLive is bool &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             data.hostName is string && data.hostName.size() >= 1 && data.hostName.size() <= 60;
+    }
+
+    function isValidChatMessage(data) {
+      return isValidId(data.roomId) &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 60 &&
+             (!('senderAvatarUrl' in data) || data.senderAvatarUrl == null || (data.senderAvatarUrl is string && data.senderAvatarUrl.size() <= 500)) &&
+             data.text is string && data.text.size() >= 1 && data.text.size() <= 500 &&
+             (!('streamQuality' in data) || data.streamQuality == null || (data.streamQuality is string && data.streamQuality.size() <= 30)) &&
+             data.messageType in ['chat', 'reaction'];
+    }
+
+    function isValidPresence(data) {
+      return isValidId(data.roomId) &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
+             (!('activeQuality' in data) || data.activeQuality == null || (data.activeQuality is string && data.activeQuality.size() <= 30));
+    }
+
+    // --- /users/{userId} ---
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'photoUrl', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp &&
+                       incoming().updatedAt <= request.time;
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp &&
+                       incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoUrl', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+
+      // --- /users/{userId}/watchlist/{itemId} ---
+      match /watchlist/{itemId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(itemId) && request.auth.uid == userId;
+        allow list: if isSignedIn() && request.auth.uid == userId;
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(itemId) &&
+                         request.auth.uid == userId &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'subjectId', 'title', 'mediaType', 'lastSeason', 'lastEpisode', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'subjectId', 'title', 'mediaType', 'coverUrl', 'imdbRating', 'lastSeason', 'lastEpisode', 'createdAt', 'updatedAt']) &&
+                         isValidWatchlistItem(incoming()) &&
+                         incoming().createdAt is timestamp &&
+                         incoming().createdAt <= request.time &&
+                         incoming().updatedAt is timestamp &&
+                         incoming().updatedAt <= request.time;
+
+        allow update: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(itemId) &&
+                         isValidWatchlistItem(incoming()) &&
+                         request.auth.uid == userId &&
+                         incoming().userId == existing().userId &&
+                         incoming().subjectId == existing().subjectId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt is timestamp &&
+                         incoming().updatedAt <= request.time &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'mediaType', 'coverUrl', 'imdbRating', 'lastSeason', 'lastEpisode', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(userId) && isValidId(itemId) && request.auth.uid == userId;
+      }
+    }
+
+    // --- /rooms/{roomId} ---
+    match /rooms/{roomId} {
+      allow get: if isSignedIn() && isValidId(roomId);
+      allow list: if isSignedIn() && existing().isLive == true;
+
+      allow create: if isSignedIn() &&
+                       isValidId(roomId) &&
+                       incoming().roomId == roomId &&
+                       incoming().createdBy == request.auth.uid &&
+                       incoming().keys().hasAll(['roomId', 'subjectId', 'title', 'mediaType', 'season', 'episode', 'isLive', 'createdBy', 'hostName', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['roomId', 'subjectId', 'title', 'mediaType', 'season', 'episode', 'coverUrl', 'detailPath', 'isLive', 'createdBy', 'hostName', 'createdAt', 'updatedAt']) &&
+                       isValidWatchRoom(incoming()) &&
+                       incoming().createdAt is timestamp &&
+                       incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp &&
+                       incoming().updatedAt <= request.time;
+
+      allow update: if isSignedIn() &&
+                       isValidId(roomId) &&
+                       isValidWatchRoom(incoming()) &&
+                       incoming().roomId == existing().roomId &&
+                       incoming().subjectId == existing().subjectId &&
+                       incoming().createdBy == existing().createdBy &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp &&
+                       incoming().updatedAt <= request.time &&
+                       (
+                         (request.auth.uid == existing().createdBy && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'coverUrl', 'isLive', 'updatedAt'])) ||
+                         incoming().diff(existing()).affectedKeys().hasOnly(['updatedAt'])
+                       );
+
+      allow delete: if isSignedIn() && isValidId(roomId) && existing().createdBy == request.auth.uid;
+
+      // --- /rooms/{roomId}/messages/{messageId} ---
+      match /messages/{messageId} {
+        allow get: if isSignedIn() && isValidId(roomId) && isValidId(messageId);
+        allow list: if isSignedIn() && existing().roomId == roomId;
+
+        allow create: if isSignedIn() &&
+                         isValidId(roomId) &&
+                         isValidId(messageId) &&
+                         isValidChatMessage(incoming()) &&
+                         incoming().roomId == roomId &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['roomId', 'userId', 'senderName', 'text', 'messageType', 'createdAt']) &&
+                         incoming().keys().hasOnly(['roomId', 'userId', 'senderName', 'senderAvatarUrl', 'text', 'streamQuality', 'messageType', 'createdAt']) &&
+                         incoming().createdAt is timestamp &&
+                         incoming().createdAt <= request.time &&
+                         exists(/databases/$(database)/documents/rooms/$(roomId));
+
+        allow update: if false;
+        allow delete: if isSignedIn() && isValidId(roomId) && isValidId(messageId) && existing().userId == request.auth.uid;
+      }
+
+      // --- /rooms/{roomId}/presence/{presenceUserId} ---
+      match /presence/{presenceUserId} {
+        allow get: if isSignedIn() && isValidId(roomId) && isValidId(presenceUserId);
+        allow list: if isSignedIn() && existing().roomId == roomId;
+
+        allow create: if isSignedIn() &&
+                         isValidId(roomId) &&
+                         isValidId(presenceUserId) &&
+                         isValidPresence(incoming()) &&
+                         request.auth.uid == presenceUserId &&
+                         incoming().roomId == roomId &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['roomId', 'userId', 'displayName', 'lastSeenAt']) &&
+                         incoming().keys().hasOnly(['roomId', 'userId', 'displayName', 'activeQuality', 'lastSeenAt']) &&
+                         incoming().lastSeenAt is timestamp &&
+                         incoming().lastSeenAt <= request.time &&
+                         exists(/databases/$(database)/documents/rooms/$(roomId));
+
+        allow update: if isSignedIn() &&
+                         isValidId(roomId) &&
+                         isValidId(presenceUserId) &&
+                         isValidPresence(incoming()) &&
+                         request.auth.uid == presenceUserId &&
+                         incoming().roomId == existing().roomId &&
+                         incoming().userId == existing().userId &&
+                         incoming().lastSeenAt is timestamp &&
+                         incoming().lastSeenAt <= request.time &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'activeQuality', 'lastSeenAt']);
+
+        allow delete: if isSignedIn() && isValidId(roomId) && isValidId(presenceUserId) && request.auth.uid == presenceUserId;
+      }
+    }
+  }
+}
