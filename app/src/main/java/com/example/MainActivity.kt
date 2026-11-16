@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LiveTv
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
@@ -61,10 +63,12 @@ import com.example.ui.navigation.DiscoverRoute
 import com.example.ui.navigation.LiveRoomsRoute
 import com.example.ui.navigation.SearchRoute
 import com.example.ui.navigation.WatchRoomRoute
+import com.example.ui.navigation.WebSitesRoute
 import com.example.ui.screens.DiscoverScreen
 import com.example.ui.screens.LiveRoomsScreen
 import com.example.ui.screens.SearchScreen
 import com.example.ui.screens.WatchRoomScreen
+import com.example.ui.screens.WebStreamScreen
 import com.example.ui.theme.BroadcastCyan
 import com.example.ui.theme.ElectricCrimson
 import com.example.ui.theme.ObsidianBg
@@ -245,6 +249,36 @@ private fun StreamBoxMainShell(user: FirebaseUser) {
                 ),
               modifier = Modifier.testTag("nav_search"),
             )
+
+            NavigationBarItem(
+              selected = currentDestination?.hasRoute<WebSitesRoute>() == true,
+              onClick = {
+                navController.navigate(WebSitesRoute) {
+                  popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                  launchSingleTop = true
+                  restoreState = true
+                }
+              },
+              icon = {
+                Icon(
+                  imageVector =
+                    if (currentDestination?.hasRoute<WebSitesRoute>() == true)
+                      Icons.Filled.Language
+                    else Icons.Outlined.Language,
+                  contentDescription = stringResource(R.string.nav_websites),
+                )
+              },
+              label = { Text(stringResource(R.string.nav_websites)) },
+              colors =
+                NavigationBarItemDefaults.colors(
+                  selectedIconColor = ObsidianBg,
+                  selectedTextColor = Color.White,
+                  indicatorColor = BroadcastCyan,
+                  unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                  unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+              modifier = Modifier.testTag("nav_websites"),
+            )
           }
         }
       },
@@ -312,6 +346,28 @@ private fun StreamBoxMainShell(user: FirebaseUser) {
                 )
               },
               label = { Text(stringResource(R.string.nav_search)) },
+              colors =
+                NavigationRailItemDefaults.colors(
+                  selectedIconColor = ObsidianBg,
+                  indicatorColor = BroadcastCyan,
+                ),
+            )
+            NavigationRailItem(
+              selected = currentDestination?.hasRoute<WebSitesRoute>() == true,
+              onClick = {
+                navController.navigate(WebSitesRoute) {
+                  popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                  launchSingleTop = true
+                  restoreState = true
+                }
+              },
+              icon = {
+                Icon(
+                  imageVector = Icons.Filled.Language,
+                  contentDescription = stringResource(R.string.nav_websites),
+                )
+              },
+              label = { Text(stringResource(R.string.nav_websites)) },
               colors =
                 NavigationRailItemDefaults.colors(
                   selectedIconColor = ObsidianBg,
@@ -410,11 +466,28 @@ private fun StreamBoxMainShell(user: FirebaseUser) {
             )
           }
 
+          composable<WebSitesRoute> {
+            WebStreamScreen(
+              onPlayDirectStream = { streamUrl, refererUrl, title ->
+                val webRoomId = "web_${streamUrl.hashCode().toUInt()}"
+                navController.navigate(
+                  WatchRoomRoute(
+                    subjectId = webRoomId,
+                    title = title,
+                    mediaType = "Web Stream",
+                    directStreamUrl = streamUrl,
+                    directStreamReferer = refererUrl,
+                  )
+                )
+              },
+            )
+          }
+
           composable<WatchRoomRoute> { backStackEntry ->
             val route = backStackEntry.toRoute<WatchRoomRoute>()
             val roomViewModel: WatchRoomViewModel =
               viewModel(
-                key = "${user.uid}_${route.subjectId}_${route.season}_${route.episode}",
+                key = "${user.uid}_${route.subjectId}_${route.season}_${route.episode}_${route.directStreamUrl.orEmpty()}",
                 factory =
                   viewModelFactory {
                     initializer {
@@ -434,6 +507,8 @@ private fun StreamBoxMainShell(user: FirebaseUser) {
                         initialEpisode = route.episode,
                         initialCoverUrl = route.coverUrl,
                         initialDetailPath = route.detailPath,
+                        directStreamUrl = route.directStreamUrl,
+                        directStreamReferer = route.directStreamReferer,
                         currentUserId = user.uid,
                         displayName = displayName,
                         photoUrl = photoUrl,

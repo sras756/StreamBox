@@ -16,6 +16,7 @@ data class MediaDub(
   val subjectId: String,
   val langName: String,
   val language: String,
+  val detailPath: String? = null,
 )
 
 data class MediaDetail(
@@ -70,6 +71,12 @@ data class HomeSection(
 data class HomeFeedData(
   val banners: List<MediaItem>,
   val sections: List<HomeSection>,
+)
+
+data class DubbedCatalogData(
+  val movies: List<MediaItem>,
+  val series: List<MediaItem>,
+  val anime: List<MediaItem>,
 )
 
 data class SearchSuggestion(

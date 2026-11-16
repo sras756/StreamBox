@@ -3,6 +3,7 @@ package com.example.ui.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.model.DubbedCatalogData
 import com.example.data.model.HomeFeedData
 import com.example.data.model.MediaItem
 import com.example.data.model.SearchSuggestion
@@ -36,6 +37,12 @@ enum class DiscoverFilter {
   MOVIES,
   SERIES,
   ANIME,
+  DUBBED,
+}
+
+enum class DubLanguageFilter(val apiClassify: String) {
+  ENGLISH("English dub"),
+  HINDI("Hindi dub"),
 }
 
 class CatalogViewModel(
@@ -60,6 +67,12 @@ class CatalogViewModel(
 
   private val _animeState = MutableStateFlow<UiState<List<MediaItem>>>(UiState.Loading)
   val animeState: StateFlow<UiState<List<MediaItem>>> = _animeState.asStateFlow()
+
+  private val _dubLanguage = MutableStateFlow(DubLanguageFilter.ENGLISH)
+  val dubLanguage: StateFlow<DubLanguageFilter> = _dubLanguage.asStateFlow()
+
+  private val _dubbedState = MutableStateFlow<UiState<DubbedCatalogData>>(UiState.Loading)
+  val dubbedState: StateFlow<UiState<DubbedCatalogData>> = _dubbedState.asStateFlow()
 
   private val _searchQuery = MutableStateFlow("")
   val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -121,10 +134,17 @@ class CatalogViewModel(
     loadMovies()
     loadSeries()
     loadAnime()
+    loadDubbedCatalog()
   }
 
   fun selectFilter(filter: DiscoverFilter) {
     _selectedFilter.value = filter
+  }
+
+  fun selectDubLanguage(lang: DubLanguageFilter) {
+    if (_dubLanguage.value == lang && _dubbedState.value is UiState.Success) return
+    _dubLanguage.value = lang
+    loadDubbedCatalog()
   }
 
   fun loadHomeFeed() {
@@ -171,6 +191,20 @@ class CatalogViewModel(
         .onFailure { err ->
           Log.e(TAG, "Anime load failed", err)
           _animeState.value = UiState.Error(err.localizedMessage ?: "Failed to load anime")
+        }
+    }
+  }
+
+  fun loadDubbedCatalog() {
+    val classify = _dubLanguage.value.apiClassify
+    viewModelScope.launch {
+      _dubbedState.value = UiState.Loading
+      runCatching { apiClient.getDubbedCatalog(classify = classify) }
+        .onSuccess { data -> _dubbedState.value = UiState.Success(data) }
+        .onFailure { err ->
+          Log.e(TAG, "Dubbed catalog load failed", err)
+          _dubbedState.value =
+            UiState.Error(err.localizedMessage ?: "Failed to load dubbed movies, series & anime")
         }
     }
   }

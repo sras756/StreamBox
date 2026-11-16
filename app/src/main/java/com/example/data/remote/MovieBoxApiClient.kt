@@ -1,5 +1,6 @@
 package com.example.data.remote
 
+import com.example.data.model.DubbedCatalogData
 import com.example.data.model.HomeFeedData
 import com.example.data.model.HomeSection
 import com.example.data.model.MediaDetail
@@ -240,11 +241,27 @@ class MovieBoxApiClient {
       HomeFeedData(banners = banners.distinctBy { it.subjectId }, sections = sections)
     }
 
-  suspend fun getMovies(page: Int = 1, perPage: Int = 24, sort: String = "RECOMMEND"): List<MediaItem> =
-    fetchFilteredCatalog(tabId = 2, defaultType = "Movie", page = page, perPage = perPage, sort = sort)
+  suspend fun getMovies(page: Int = 1, perPage: Int = 24, sort: String = "Hottest"): List<MediaItem> =
+    fetchFilteredCatalog(
+      channelId = 1,
+      classify = "All",
+      defaultType = "Movie",
+      page = page,
+      perPage = perPage,
+      sort = sort,
+      allowedSubjectTypes = setOf(1),
+    )
 
-  suspend fun getTvSeries(page: Int = 1, perPage: Int = 24, sort: String = "RECOMMEND"): List<MediaItem> =
-    fetchFilteredCatalog(tabId = 5, defaultType = "Series", page = page, perPage = perPage, sort = sort)
+  suspend fun getTvSeries(page: Int = 1, perPage: Int = 24, sort: String = "Hottest"): List<MediaItem> =
+    fetchFilteredCatalog(
+      channelId = 2,
+      classify = "All",
+      defaultType = "Series",
+      page = page,
+      perPage = perPage,
+      sort = sort,
+      allowedSubjectTypes = setOf(2),
+    )
 
   suspend fun getAnime(page: Int = 1, perPage: Int = 30): List<MediaItem> {
     val homeAnime =
@@ -297,9 +314,121 @@ class MovieBoxApiClient {
     return combined
   }
 
+  suspend fun getDubbedMovies(
+    classify: String = "English dub",
+    page: Int = 1,
+    perPage: Int = 24,
+  ): List<MediaItem> =
+    fetchFilteredCatalog(
+      channelId = 1,
+      classify = classify,
+      defaultType = "Movie",
+      page = page,
+      perPage = perPage,
+      sort = "Hottest",
+      allowedSubjectTypes = setOf(1),
+    )
+
+  suspend fun getDubbedSeries(
+    classify: String = "English dub",
+    page: Int = 1,
+    perPage: Int = 24,
+  ): List<MediaItem> =
+    fetchFilteredCatalog(
+      channelId = 2,
+      classify = classify,
+      defaultType = "Series",
+      page = page,
+      perPage = perPage,
+      sort = "Hottest",
+      allowedSubjectTypes = setOf(2),
+    )
+
+  suspend fun getDubbedAnime(
+    classify: String = "English dub",
+    page: Int = 1,
+    perPage: Int = 24,
+  ): List<MediaItem> {
+    val primary =
+      runCatching {
+          fetchFilteredCatalog(
+            channelId = 1006,
+            classify = classify,
+            genre = "Anime",
+            defaultType = null,
+            page = page,
+            perPage = perPage,
+            sort = "Hottest",
+            allowedSubjectTypes = setOf(1, 2),
+          )
+        }
+        .getOrDefault(emptyList())
+
+    val animationFallback =
+      runCatching {
+          fetchFilteredCatalog(
+            channelId = 2,
+            classify = classify,
+            genre = "Animation",
+            defaultType = "Series",
+            page = page,
+            perPage = perPage,
+            sort = "Hottest",
+            allowedSubjectTypes = setOf(1, 2),
+          )
+        }
+        .getOrDefault(emptyList())
+
+    val movieAnimation =
+      runCatching {
+          fetchFilteredCatalog(
+            channelId = 1,
+            classify = classify,
+            genre = "Animation",
+            defaultType = "Movie",
+            page = page,
+            perPage = perPage,
+            sort = "Hottest",
+            allowedSubjectTypes = setOf(1, 2),
+          )
+        }
+        .getOrDefault(emptyList())
+
+    val homeEnglishDubbedAnime =
+      if (classify.contains("English", ignoreCase = true)) {
+        runCatching {
+            getHomeFeed()
+              .sections
+              .filter {
+                it.title.contains("Anime", ignoreCase = true) &&
+                  it.title.contains("Dubbed", ignoreCase = true)
+              }
+              .flatMap { it.items }
+          }
+          .getOrDefault(emptyList())
+      } else {
+        emptyList()
+      }
+
+    return (homeEnglishDubbedAnime + primary + animationFallback + movieAnimation).distinctBy {
+      it.subjectId
+    }
+  }
+
+  suspend fun getDubbedCatalog(classify: String = "English dub"): DubbedCatalogData {
+    val movies = runCatching { getDubbedMovies(classify = classify) }.getOrDefault(emptyList())
+    val series = runCatching { getDubbedSeries(classify = classify) }.getOrDefault(emptyList())
+    val anime = runCatching { getDubbedAnime(classify = classify) }.getOrDefault(emptyList())
+    if (movies.isEmpty() && series.isEmpty() && anime.isEmpty()) {
+      throw IOException("Failed to load live dubbed catalog for $classify")
+    }
+    return DubbedCatalogData(movies = movies, series = series, anime = anime)
+  }
+
   private suspend fun fetchFilteredCatalog(
     tabId: Int? = null,
     channelId: Int? = null,
+    classify: String? = null,
     genre: String = "ALL",
     defaultType: String?,
     page: Int,
@@ -312,16 +441,22 @@ class MovieBoxApiClient {
         JSONObject().apply {
           if (tabId != null) put("tabId", tabId)
           if (channelId != null) put("channelId", channelId)
-          put(
-            "filter",
-            JSONObject().apply {
-              put("sort", sort)
-              put("genre", genre)
-              put("country", "ALL")
-              put("year", "ALL")
-              put("language", "ALL")
-            },
-          )
+          if (!classify.isNullOrBlank()) {
+            put("classify", classify)
+            if (genre != "ALL") put("genre", genre)
+            put("sort", sort)
+          } else {
+            put(
+              "filter",
+              JSONObject().apply {
+                put("sort", sort)
+                put("genre", genre)
+                put("country", "ALL")
+                put("year", "ALL")
+                put("language", "ALL")
+              },
+            )
+          }
           put("page", page)
           put("perPage", perPage)
         }
@@ -537,12 +672,17 @@ class MovieBoxApiClient {
     for (i in 0 until dubArr.length()) {
       val d = dubArr.optJSONObject(i) ?: continue
       val sid = d.optString("subjectId")
+      val dubPath = d.optString("detailPath").ifBlank { null }
       if (sid.isNotBlank()) {
+        if (!dubPath.isNullOrBlank()) {
+          detailPathCache[sid] = dubPath
+        }
         dubs.add(
           MediaDub(
             subjectId = sid,
             langName = d.optString("lanName").ifBlank { d.optString("language") },
-            language = d.optString("language"),
+            language = d.optString("lanCode").ifBlank { d.optString("language") },
+            detailPath = dubPath,
           )
         )
       }

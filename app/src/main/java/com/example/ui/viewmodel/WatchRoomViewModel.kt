@@ -5,12 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.ChatMessage
 import com.example.data.model.MediaDetail
+import com.example.data.model.MediaDub
 import com.example.data.model.MediaItem
 import com.example.data.model.SeasonInfo
 import com.example.data.model.StreamSource
 import com.example.data.model.SubtitleTrack
 import com.example.data.model.ViewerPresence
 import com.example.data.remote.MovieBoxApiClient
+import com.example.data.remote.MovieBoxSigner
 import com.example.data.repository.StreamRoomRepository
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
@@ -40,10 +42,18 @@ class WatchRoomViewModel(
   initialEpisode: Int,
   private val initialCoverUrl: String?,
   private val initialDetailPath: String?,
+  private val directStreamUrl: String? = null,
+  private val directStreamReferer: String? = null,
   val currentUserId: String,
   private val displayName: String,
   private val photoUrl: String?,
 ) : ViewModel() {
+
+  private val _activeSubjectId = MutableStateFlow(subjectId)
+  val activeSubjectId: StateFlow<String> = _activeSubjectId.asStateFlow()
+
+  private val _availableDubs = MutableStateFlow<List<MediaDub>>(emptyList())
+  val availableDubs: StateFlow<List<MediaDub>> = _availableDubs.asStateFlow()
 
   private val _currentTitle = MutableStateFlow(initialTitle)
   val currentTitle: StateFlow<String> = _currentTitle.asStateFlow()
@@ -141,21 +151,73 @@ class WatchRoomViewModel(
   private val failedStreamUrls = mutableSetOf<String>()
 
   init {
-    loadDetailsAndEpisodes()
-    loadStreamsAndJoinRoom(initialSeason, initialEpisode)
+    if (!directStreamUrl.isNullOrBlank()) {
+      initDirectWebsiteStream(directStreamUrl, directStreamReferer)
+    } else {
+      loadDetailsAndEpisodes()
+      loadStreamsAndJoinRoom(initialSeason, initialEpisode)
+    }
+  }
+
+  private fun initDirectWebsiteStream(streamUrl: String, referer: String?) {
+    val cleanReferer = referer?.takeIf { it.isNotBlank() } ?: "https://moviebox.ph/"
+    val format =
+      when {
+        streamUrl.contains(".m3u8", ignoreCase = true) -> "HLS"
+        streamUrl.contains(".mpd", ignoreCase = true) -> "DASH"
+        else -> "MP4"
+      }
+    val hostLabel =
+      runCatching { java.net.URI(cleanReferer).host ?: cleanReferer }.getOrDefault(cleanReferer)
+    val directSource =
+      StreamSource(
+        source = "Website Stream ($hostLabel)",
+        format = format,
+        quality = if (format == "MP4") "HD" else "Adaptive",
+        qualityValue = 1080,
+        resolutionTag = format,
+        url = streamUrl,
+        headers =
+          mapOf(
+            "User-Agent" to MovieBoxSigner.WEB_USER_AGENT,
+            "Referer" to cleanReferer,
+          ),
+      )
+    _detailState.value =
+      UiState.Success(
+        MediaDetail(
+          subjectId = subjectId,
+          title = _currentTitle.value,
+          mediaType = mediaType,
+          description = "Streaming live from $cleanReferer",
+        )
+      )
+    _streamsState.value = UiState.Success(listOf(directSource))
+    _selectedStream.value = directSource
+    joinWatchRoom(_selectedSeason.value, _selectedEpisode.value, directSource.quality)
   }
 
   fun loadDetailsAndEpisodes() {
+    if (!directStreamUrl.isNullOrBlank()) {
+      initDirectWebsiteStream(directStreamUrl, directStreamReferer)
+      return
+    }
+    val targetSubjectId = _activeSubjectId.value
     viewModelScope.launch {
       _detailState.value = UiState.Loading
-      runCatching { apiClient.getDetails(subjectId, detailPathHint = resolvedDetailPath) }
+      runCatching { apiClient.getDetails(targetSubjectId, detailPathHint = resolvedDetailPath) }
         .onSuccess { detail ->
           _detailState.value = UiState.Success(detail)
           if (detail.title.isNotBlank()) _currentTitle.value = detail.title
           if (!detail.detailPath.isNullOrBlank()) resolvedDetailPath = detail.detailPath
           if (!detail.coverUrl.isNullOrBlank()) resolvedCoverUrl = detail.coverUrl
+          if (detail.dubs.isNotEmpty()) {
+            val currentList = _availableDubs.value
+            _availableDubs.value =
+              (currentList + detail.dubs).distinctBy { it.subjectId }
+          }
           if (detail.mediaType == "Series" || mediaType == "Series") {
-            runCatching { apiClient.getEpisodes(subjectId, detailPathHint = resolvedDetailPath) }
+            runCatching { apiClient.getEpisodes(targetSubjectId, detailPathHint = resolvedDetailPath) }
               .onSuccess { sList ->
                 _seasons.value = sList
                 if (_selectedSeason.value == 0 && sList.isNotEmpty()) {
@@ -174,6 +236,18 @@ class WatchRoomViewModel(
     }
   }
 
+  fun switchDub(dub: MediaDub) {
+    if (!directStreamUrl.isNullOrBlank()) return
+    if (_activeSubjectId.value == dub.subjectId) return
+    failedStreamUrls.clear()
+    _activeSubjectId.value = dub.subjectId
+    if (!dub.detailPath.isNullOrBlank()) {
+      resolvedDetailPath = dub.detailPath
+    }
+    loadDetailsAndEpisodes()
+    loadStreamsAndJoinRoom(_selectedSeason.value, _selectedEpisode.value)
+  }
+
   fun selectEpisode(season: Int, episode: Int) {
     if (_selectedSeason.value == season && _selectedEpisode.value == episode) return
     val previousRoom = _activeRoomId.value
@@ -187,6 +261,10 @@ class WatchRoomViewModel(
   }
 
   fun reloadStreams() {
+    if (!directStreamUrl.isNullOrBlank()) {
+      initDirectWebsiteStream(directStreamUrl, directStreamReferer)
+      return
+    }
     failedStreamUrls.clear()
     if (_detailState.value is UiState.Error) {
       loadDetailsAndEpisodes()
@@ -210,6 +288,11 @@ class WatchRoomViewModel(
   }
 
   private fun loadStreamsAndJoinRoom(season: Int, episode: Int) {
+    if (!directStreamUrl.isNullOrBlank()) {
+      initDirectWebsiteStream(directStreamUrl, directStreamReferer)
+      return
+    }
+    val targetSubjectId = _activeSubjectId.value
     viewModelScope.launch {
       _streamsState.value = UiState.Loading
       _selectedStream.value = null
@@ -217,7 +300,7 @@ class WatchRoomViewModel(
 
       val streamsResult = runCatching {
         apiClient.getStreams(
-          subjectId = subjectId,
+          subjectId = targetSubjectId,
           season = season,
           episode = episode,
           detailPath = resolvedDetailPath,
@@ -244,7 +327,7 @@ class WatchRoomViewModel(
         }
 
       runCatching {
-          apiClient.getSubtitles(subjectId = subjectId, season = season, episode = episode)
+          apiClient.getSubtitles(subjectId = targetSubjectId, season = season, episode = episode)
         }
         .onSuccess { subs -> _subtitles.value = subs }
     }

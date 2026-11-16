@@ -133,4 +133,28 @@ class MovieBoxSignerTest {
     }
     assertTrue("Expected at least 1 playable CDN stream (200/206), got $playableCount", playableCount > 0)
   }
+
+  @Test
+  fun apiClient_loadsDubbedMoviesSeriesAndAnime() = runBlocking {
+    val client = MovieBoxApiClient()
+
+    val movies = client.getMovies(page = 1, perPage = 10)
+    assertTrue("Expected live movies", movies.isNotEmpty())
+
+    val series = client.getTvSeries(page = 1, perPage = 10)
+    assertTrue("Expected live series", series.isNotEmpty())
+
+    val englishDubbed = client.getDubbedCatalog("English dub")
+    assertTrue("Expected English dubbed movies", englishDubbed.movies.isNotEmpty())
+    assertTrue("Expected English dubbed series", englishDubbed.series.isNotEmpty())
+    assertTrue("Expected English dubbed anime", englishDubbed.anime.isNotEmpty())
+
+    val hindiMovies = client.getDubbedMovies("Hindi dub", page = 1, perPage = 8)
+    val hindiSeries = client.getDubbedSeries("Hindi dub", page = 1, perPage = 8)
+    assertTrue("Expected Hindi dubbed movies or series", hindiMovies.isNotEmpty() || hindiSeries.isNotEmpty())
+
+    val sampleAnime = englishDubbed.anime.first()
+    val detail = client.getDetails(sampleAnime.subjectId, detailPathHint = sampleAnime.detailPath)
+    assertTrue("Expected detail title for dubbed anime", detail.title.isNotBlank())
+  }
 }

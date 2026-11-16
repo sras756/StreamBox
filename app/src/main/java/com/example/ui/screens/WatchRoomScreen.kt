@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Hd
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
@@ -92,6 +93,7 @@ import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.ChatMessage
 import com.example.data.model.MediaDetail
+import com.example.data.model.MediaDub
 import com.example.data.model.SeasonInfo
 import com.example.data.model.StreamSource
 import com.example.data.model.SubtitleTrack
@@ -125,6 +127,8 @@ fun WatchRoomScreen(
   var isFullscreen by rememberSaveable { mutableStateOf(false) }
   var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
+  val activeSubjectId by viewModel.activeSubjectId.collectAsStateWithLifecycle()
+  val availableDubs by viewModel.availableDubs.collectAsStateWithLifecycle()
   val title by viewModel.currentTitle.collectAsStateWithLifecycle()
   val selectedSeason by viewModel.selectedSeason.collectAsStateWithLifecycle()
   val selectedEpisode by viewModel.selectedEpisode.collectAsStateWithLifecycle()
@@ -170,12 +174,15 @@ fun WatchRoomScreen(
     if (selectedSeason > 0) "$title • S${selectedSeason} E${selectedEpisode}" else title
   val isResolvingStream = streamsState is UiState.Loading
   val streamErrorMsg = (streamsState as? UiState.Error)?.message
+  val availableStreams = (streamsState as? UiState.Success)?.data.orEmpty()
 
   if (isFullscreen) {
     VideoPlayerSurface(
       title = displayTitle,
       stream = selectedStream,
+      availableStreams = availableStreams,
       subtitle = selectedSubtitle,
+      availableSubtitles = subtitles,
       viewerCount = activeViewers.size,
       isFullscreen = true,
       isResolvingStream = isResolvingStream,
@@ -184,6 +191,8 @@ fun WatchRoomScreen(
       onToggleFullscreen = { isFullscreen = false },
       onBack = { isFullscreen = false },
       onRetryStream = { viewModel.reloadStreams() },
+      onSelectStream = { viewModel.selectStreamSource(it) },
+      onSelectSubtitle = { viewModel.selectSubtitle(it) },
       onAutoFallbackStream = { viewModel.tryFallbackStream() },
       modifier = Modifier.fillMaxSize(),
     )
@@ -207,7 +216,9 @@ fun WatchRoomScreen(
           VideoPlayerSurface(
             title = displayTitle,
             stream = selectedStream,
+            availableStreams = availableStreams,
             subtitle = selectedSubtitle,
+            availableSubtitles = subtitles,
             viewerCount = activeViewers.size,
             isFullscreen = false,
             isResolvingStream = isResolvingStream,
@@ -216,6 +227,8 @@ fun WatchRoomScreen(
             onToggleFullscreen = { isFullscreen = true },
             onBack = onBack,
             onRetryStream = { viewModel.reloadStreams() },
+            onSelectStream = { viewModel.selectStreamSource(it) },
+            onSelectSubtitle = { viewModel.selectSubtitle(it) },
             onAutoFallbackStream = { viewModel.tryFallbackStream() },
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
           )
@@ -230,6 +243,9 @@ fun WatchRoomScreen(
             streamsState = streamsState,
             selectedStream = selectedStream,
             onSelectStream = { viewModel.selectStreamSource(it) },
+            availableDubs = availableDubs,
+            activeSubjectId = activeSubjectId,
+            onSelectDub = { viewModel.switchDub(it) },
             subtitles = subtitles,
             selectedSubtitle = selectedSubtitle,
             onSelectSubtitle = { viewModel.selectSubtitle(it) },
@@ -269,7 +285,9 @@ fun WatchRoomScreen(
         VideoPlayerSurface(
           title = displayTitle,
           stream = selectedStream,
+          availableStreams = availableStreams,
           subtitle = selectedSubtitle,
+          availableSubtitles = subtitles,
           viewerCount = activeViewers.size,
           isFullscreen = false,
           isResolvingStream = isResolvingStream,
@@ -278,6 +296,8 @@ fun WatchRoomScreen(
           onToggleFullscreen = { isFullscreen = true },
           onBack = onBack,
           onRetryStream = { viewModel.reloadStreams() },
+          onSelectStream = { viewModel.selectStreamSource(it) },
+          onSelectSubtitle = { viewModel.selectSubtitle(it) },
           onAutoFallbackStream = { viewModel.tryFallbackStream() },
           modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
         )
@@ -292,6 +312,9 @@ fun WatchRoomScreen(
           streamsState = streamsState,
           selectedStream = selectedStream,
           onSelectStream = { viewModel.selectStreamSource(it) },
+          availableDubs = availableDubs,
+          activeSubjectId = activeSubjectId,
+          onSelectDub = { viewModel.switchDub(it) },
           subtitles = subtitles,
           selectedSubtitle = selectedSubtitle,
           onSelectSubtitle = { viewModel.selectSubtitle(it) },
@@ -333,6 +356,9 @@ private fun RoomTabsAndContent(
   streamsState: UiState<List<StreamSource>>,
   selectedStream: StreamSource?,
   onSelectStream: (StreamSource) -> Unit,
+  availableDubs: List<MediaDub>,
+  activeSubjectId: String,
+  onSelectDub: (MediaDub) -> Unit,
   subtitles: List<SubtitleTrack>,
   selectedSubtitle: SubtitleTrack?,
   onSelectSubtitle: (SubtitleTrack?) -> Unit,
@@ -441,6 +467,9 @@ private fun RoomTabsAndContent(
           selectedStream = selectedStream,
           onSelectStream = onSelectStream,
           onRetryStreams = onRetryStreams,
+          availableDubs = availableDubs,
+          activeSubjectId = activeSubjectId,
+          onSelectDub = onSelectDub,
           subtitles = subtitles,
           selectedSubtitle = selectedSubtitle,
           onSelectSubtitle = onSelectSubtitle,
@@ -753,6 +782,9 @@ private fun StreamsAndSubtitlesPane(
   selectedStream: StreamSource?,
   onSelectStream: (StreamSource) -> Unit,
   onRetryStreams: () -> Unit,
+  availableDubs: List<MediaDub>,
+  activeSubjectId: String,
+  onSelectDub: (MediaDub) -> Unit,
   subtitles: List<SubtitleTrack>,
   selectedSubtitle: SubtitleTrack?,
   onSelectSubtitle: (SubtitleTrack?) -> Unit,
@@ -873,6 +905,41 @@ private fun StreamsAndSubtitlesPane(
                 }
               }
             }
+          }
+        }
+      }
+    }
+
+    if (availableDubs.size > 1) {
+      item {
+        Spacer(Modifier.height(8.dp))
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Icon(Icons.Filled.Language, contentDescription = null, tint = ElectricCrimson)
+          Text(
+            text = stringResource(R.string.audio_dubs_header),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+          )
+        }
+      }
+
+      item {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          items(availableDubs, key = { it.subjectId }) { dub ->
+            val isActiveDub = dub.subjectId == activeSubjectId
+            FilterChip(
+              selected = isActiveDub,
+              onClick = { onSelectDub(dub) },
+              label = { Text(dub.langName.ifBlank { dub.language }) },
+              colors =
+                FilterChipDefaults.filterChipColors(
+                  selectedContainerColor = ElectricCrimson,
+                  selectedLabelColor = Color.White,
+                ),
+            )
           }
         }
       }

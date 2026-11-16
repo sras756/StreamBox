@@ -42,6 +42,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.data.model.DubbedCatalogData
 import com.example.data.model.HomeFeedData
 import com.example.data.model.MediaItem
 import com.example.ui.components.ErrorRetryBox
@@ -67,6 +71,7 @@ import com.example.ui.theme.ObsidianBg
 import com.example.ui.theme.SurfaceCard
 import com.example.ui.viewmodel.CatalogViewModel
 import com.example.ui.viewmodel.DiscoverFilter
+import com.example.ui.viewmodel.DubLanguageFilter
 import com.example.ui.viewmodel.UiState
 
 @Composable
@@ -83,6 +88,8 @@ fun DiscoverScreen(
   val moviesState by viewModel.moviesState.collectAsStateWithLifecycle()
   val seriesState by viewModel.seriesState.collectAsStateWithLifecycle()
   val animeState by viewModel.animeState.collectAsStateWithLifecycle()
+  val dubLanguage by viewModel.dubLanguage.collectAsStateWithLifecycle()
+  val dubbedState by viewModel.dubbedState.collectAsStateWithLifecycle()
 
   Column(modifier = modifier.fillMaxSize()) {
     // Top Brand Header
@@ -204,6 +211,14 @@ fun DiscoverScreen(
           onClick = { viewModel.selectFilter(DiscoverFilter.ANIME) },
         )
       }
+      item {
+        FilterChipItem(
+          selected = selectedFilter == DiscoverFilter.DUBBED,
+          label = stringResource(R.string.filter_dubbed),
+          tag = "filter_dubbed_chip",
+          onClick = { viewModel.selectFilter(DiscoverFilter.DUBBED) },
+        )
+      }
     }
 
     when (selectedFilter) {
@@ -238,6 +253,15 @@ fun DiscoverScreen(
             ErrorRetryBox(message = state.message, onRetry = { viewModel.loadAnime() })
           is UiState.Success -> CatalogGrid(items = state.data, onOpenStream = onOpenStream)
         }
+      }
+      DiscoverFilter.DUBBED -> {
+        DubbedCatalogView(
+          dubLanguage = dubLanguage,
+          dubbedState = dubbedState,
+          onSelectLanguage = { viewModel.selectDubLanguage(it) },
+          onRetry = { viewModel.loadDubbedCatalog() },
+          onOpenStream = onOpenStream,
+        )
       }
     }
   }
@@ -467,6 +491,149 @@ private fun HeroBannerCard(
           text = stringResource(R.string.action_join_room),
           style = MaterialTheme.typography.labelLarge,
         )
+      }
+    }
+  }
+}
+
+@Composable
+private fun DubbedCatalogView(
+  dubLanguage: DubLanguageFilter,
+  dubbedState: UiState<DubbedCatalogData>,
+  onSelectLanguage: (DubLanguageFilter) -> Unit,
+  onRetry: () -> Unit,
+  onOpenStream: (MediaItem) -> Unit,
+) {
+  var categoryFilter by rememberSaveable { mutableIntStateOf(0) }
+
+  Column(modifier = Modifier.fillMaxSize()) {
+    LazyRow(
+      modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
+      contentPadding = PaddingValues(horizontal = 16.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      item {
+        FilterChipItem(
+          selected = dubLanguage == DubLanguageFilter.ENGLISH,
+          label = stringResource(R.string.dubbed_english),
+          tag = "dub_lang_english",
+          onClick = { onSelectLanguage(DubLanguageFilter.ENGLISH) },
+        )
+      }
+      item {
+        FilterChipItem(
+          selected = dubLanguage == DubLanguageFilter.HINDI,
+          label = stringResource(R.string.dubbed_hindi),
+          tag = "dub_lang_hindi",
+          onClick = { onSelectLanguage(DubLanguageFilter.HINDI) },
+        )
+      }
+      item { Spacer(Modifier.width(4.dp)) }
+      item {
+        FilterChipItem(
+          selected = categoryFilter == 0,
+          label = "All",
+          tag = "dub_cat_all",
+          onClick = { categoryFilter = 0 },
+        )
+      }
+      item {
+        FilterChipItem(
+          selected = categoryFilter == 1,
+          label = "Movies",
+          tag = "dub_cat_movies",
+          onClick = { categoryFilter = 1 },
+        )
+      }
+      item {
+        FilterChipItem(
+          selected = categoryFilter == 2,
+          label = "Series",
+          tag = "dub_cat_series",
+          onClick = { categoryFilter = 2 },
+        )
+      }
+      item {
+        FilterChipItem(
+          selected = categoryFilter == 3,
+          label = "Anime",
+          tag = "dub_cat_anime",
+          onClick = { categoryFilter = 3 },
+        )
+      }
+    }
+
+    when (dubbedState) {
+      UiState.Loading -> LoadingCatalogPlaceholder()
+      is UiState.Error -> ErrorRetryBox(message = dubbedState.message, onRetry = onRetry)
+      is UiState.Success -> {
+        val data = dubbedState.data
+        when (categoryFilter) {
+          1 -> CatalogGrid(items = data.movies, onOpenStream = onOpenStream)
+          2 -> CatalogGrid(items = data.series, onOpenStream = onOpenStream)
+          3 ->
+            if (data.anime.isEmpty()) {
+              Box(
+                modifier = Modifier.fillMaxSize().padding(24.dp),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = "No dubbed anime available for ${dubLanguage.apiClassify} yet. Try English Dub.",
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            } else {
+              CatalogGrid(items = data.anime, onOpenStream = onOpenStream)
+            }
+          else -> {
+            val sections =
+              listOfNotNull(
+                data.movies.takeIf { it.isNotEmpty() }?.let { "Dubbed Movies" to it },
+                data.series.takeIf { it.isNotEmpty() }?.let { "Dubbed Series" to it },
+                data.anime.takeIf { it.isNotEmpty() }?.let { "Dubbed Anime" to it },
+              )
+            LazyColumn(
+              modifier = Modifier.fillMaxSize(),
+              contentPadding = PaddingValues(vertical = 10.dp),
+              verticalArrangement = Arrangement.spacedBy(22.dp),
+            ) {
+              items(sections, key = { it.first }) { (sectionTitle, itemsList) ->
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                  ) {
+                    Text(
+                      text = sectionTitle,
+                      style = MaterialTheme.typography.titleLarge,
+                      color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                      text = "${itemsList.size} dubbed",
+                      style = MaterialTheme.typography.labelMedium,
+                      color = BroadcastCyan,
+                    )
+                  }
+
+                  LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                  ) {
+                    items(itemsList, key = { it.subjectId }) { item ->
+                      MediaPosterCard(
+                        item = item,
+                        onClick = { onOpenStream(item) },
+                        modifier = Modifier.width(136.dp),
+                      )
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   }

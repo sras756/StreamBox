@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Fullscreen
@@ -36,6 +38,8 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -93,7 +97,9 @@ import okhttp3.OkHttpClient
 fun VideoPlayerSurface(
   title: String,
   stream: StreamSource?,
+  availableStreams: List<StreamSource> = emptyList(),
   subtitle: SubtitleTrack?,
+  availableSubtitles: List<SubtitleTrack> = emptyList(),
   viewerCount: Int,
   isFullscreen: Boolean,
   isResolvingStream: Boolean,
@@ -102,6 +108,8 @@ fun VideoPlayerSurface(
   onToggleFullscreen: () -> Unit,
   onBack: () -> Unit,
   onRetryStream: () -> Unit,
+  onSelectStream: (StreamSource) -> Unit = {},
+  onSelectSubtitle: (SubtitleTrack?) -> Unit = {},
   onAutoFallbackStream: () -> Boolean = { false },
   modifier: Modifier = Modifier,
 ) {
@@ -109,6 +117,8 @@ fun VideoPlayerSurface(
   val lifecycleOwner = LocalLifecycleOwner.current
 
   var showControls by remember { mutableStateOf(true) }
+  var showQualityMenu by remember { mutableStateOf(false) }
+  var showSubtitleMenu by remember { mutableStateOf(false) }
   var isPlaying by remember { mutableStateOf(false) }
   var isBuffering by remember { mutableStateOf(false) }
   var playbackError by remember { mutableStateOf<String?>(null) }
@@ -236,8 +246,8 @@ fun VideoPlayerSurface(
     }
   }
 
-  LaunchedEffect(showControls, isPlaying) {
-    if (showControls && isPlaying) {
+  LaunchedEffect(showControls, isPlaying, showQualityMenu, showSubtitleMenu) {
+    if (showControls && isPlaying && !showQualityMenu && !showSubtitleMenu) {
       delay(4000)
       showControls = false
     }
@@ -382,16 +392,79 @@ fun VideoPlayerSurface(
           verticalAlignment = Alignment.CenterVertically,
         ) {
           if (stream != null) {
-            Surface(
-              color = BroadcastCyan.copy(alpha = 0.22f),
-              shape = RoundedCornerShape(6.dp),
-            ) {
-              Text(
-                text = stream.quality,
-                style = MaterialTheme.typography.labelSmall,
-                color = BroadcastCyan,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-              )
+            Box {
+              Surface(
+                color = BroadcastCyan.copy(alpha = 0.24f),
+                shape = RoundedCornerShape(8.dp),
+                modifier =
+                  Modifier.clickable(enabled = availableStreams.isNotEmpty()) {
+                      showQualityMenu = true
+                    }
+                    .testTag("player_quality_selector"),
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Text(
+                    text = stream.quality,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = BroadcastCyan,
+                  )
+                  if (availableStreams.size > 1) {
+                    Spacer(Modifier.width(2.dp))
+                    Icon(
+                      imageVector = Icons.Filled.ArrowDropDown,
+                      contentDescription = stringResource(R.string.cd_select_quality),
+                      tint = BroadcastCyan,
+                      modifier = Modifier.size(16.dp),
+                    )
+                  }
+                }
+              }
+
+              DropdownMenu(
+                expanded = showQualityMenu,
+                onDismissRequest = { showQualityMenu = false },
+                containerColor = ObsidianBg,
+              ) {
+                availableStreams.forEach { option ->
+                  val isCurrent = option.url == stream.url
+                  DropdownMenuItem(
+                    text = {
+                      val detailLabel =
+                        buildString {
+                          append(option.quality)
+                          append(" • ")
+                          append(option.format)
+                          if (option.sizeMb > 0.0) {
+                            append(" (${option.sizeMb} MB)")
+                          }
+                        }
+                      Text(
+                        text = detailLabel,
+                        color = if (isCurrent) BroadcastCyan else Color.White,
+                        style = MaterialTheme.typography.bodyMedium,
+                      )
+                    },
+                    trailingIcon = {
+                      if (isCurrent) {
+                        Icon(
+                          imageVector = Icons.Filled.Check,
+                          contentDescription = null,
+                          tint = BroadcastCyan,
+                          modifier = Modifier.size(18.dp),
+                        )
+                      }
+                    },
+                    onClick = {
+                      showQualityMenu = false
+                      playbackError = null
+                      onSelectStream(option)
+                    },
+                  )
+                }
+              }
             }
           }
           Surface(
@@ -529,28 +602,88 @@ fun VideoPlayerSurface(
             )
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-              if (subtitle != null) {
-                Surface(
-                  color = Color.White.copy(alpha = 0.18f),
-                  shape = RoundedCornerShape(4.dp),
-                  modifier = Modifier.padding(end = 6.dp),
-                ) {
-                  Row(
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+              if (subtitle != null || availableSubtitles.isNotEmpty()) {
+                Box(modifier = Modifier.padding(end = 4.dp)) {
+                  Surface(
+                    color = Color.White.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier =
+                      Modifier.clickable(enabled = availableSubtitles.isNotEmpty()) {
+                          showSubtitleMenu = true
+                        }
+                        .testTag("player_subtitle_selector"),
                   ) {
-                    Icon(
-                      imageVector = Icons.Filled.ClosedCaption,
-                      contentDescription = null,
-                      tint = BroadcastCyan,
-                      modifier = Modifier.size(14.dp),
+                    Row(
+                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                      verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                      Icon(
+                        imageVector = Icons.Filled.ClosedCaption,
+                        contentDescription = stringResource(R.string.cd_select_subtitles),
+                        tint = if (subtitle != null) BroadcastCyan else Color.White,
+                        modifier = Modifier.size(16.dp),
+                      )
+                      Spacer(Modifier.width(4.dp))
+                      Text(
+                        text = subtitle?.code?.uppercase()?.ifBlank { "CC" } ?: "CC",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                      )
+                    }
+                  }
+
+                  DropdownMenu(
+                    expanded = showSubtitleMenu,
+                    onDismissRequest = { showSubtitleMenu = false },
+                    containerColor = ObsidianBg,
+                  ) {
+                    DropdownMenuItem(
+                      text = {
+                        Text(
+                          text = stringResource(R.string.subtitles_off),
+                          color = if (subtitle == null) BroadcastCyan else Color.White,
+                        )
+                      },
+                      trailingIcon = {
+                        if (subtitle == null) {
+                          Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = null,
+                            tint = BroadcastCyan,
+                            modifier = Modifier.size(18.dp),
+                          )
+                        }
+                      },
+                      onClick = {
+                        showSubtitleMenu = false
+                        onSelectSubtitle(null)
+                      },
                     )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                      text = subtitle.code.uppercase().ifBlank { "CC" },
-                      style = MaterialTheme.typography.labelSmall,
-                      color = Color.White,
-                    )
+                    availableSubtitles.forEach { track ->
+                      val isSelected = subtitle?.url == track.url
+                      DropdownMenuItem(
+                        text = {
+                          Text(
+                            text = track.language,
+                            color = if (isSelected) BroadcastCyan else Color.White,
+                          )
+                        },
+                        trailingIcon = {
+                          if (isSelected) {
+                            Icon(
+                              imageVector = Icons.Filled.Check,
+                              contentDescription = null,
+                              tint = BroadcastCyan,
+                              modifier = Modifier.size(18.dp),
+                            )
+                          }
+                        },
+                        onClick = {
+                          showSubtitleMenu = false
+                          onSelectSubtitle(track)
+                        },
+                      )
+                    }
                   }
                 }
               }

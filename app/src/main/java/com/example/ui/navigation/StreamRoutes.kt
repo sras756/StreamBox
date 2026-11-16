@@ -12,6 +12,9 @@ data object LiveRoomsRoute
 data object SearchRoute
 
 @Serializable
+data object WebSitesRoute
+
+@Serializable
 data class WatchRoomRoute(
   val subjectId: String,
   val title: String,
@@ -20,4 +23,6 @@ data class WatchRoomRoute(
   val episode: Int = 0,
   val coverUrl: String? = null,
   val detailPath: String? = null,
+  val directStreamUrl: String? = null,
+  val directStreamReferer: String? = null,
 )
